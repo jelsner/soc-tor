@@ -10,4 +10,63 @@ Get the latest tornado reports from the SPC
 ```{r}
 download.file(url = "http://www.spc.noaa.gov/wcm/data/1950-2022_actual_tornadoes.csv",
               destfile = here::here("data", "Tornadoes.csv"))
+Torn.df <- readr::read_csv(file = here::here("data", "Tornadoes.csv"))
 ```
+
+```{r}
+Torn.df |>
+  dplyr::filter(yr >= 2013) |>
+  dplyr::group_by(yr) |>
+  dplyr::summarize(nT = dplyr::n()) |>
+  dplyr::summarize(Avg = mean(nT),
+                   IQR = IQR(nT))
+```
+
+In the ten-year period 2013–2022 there was an average of 1156 tornadoes per year with an interquartile range of 277 tornadoes.
+
+```{r}
+YD.df <- Torn.df |>
+  dplyr::filter(yr >= 2013) |>
+  dplyr::group_by(date, yr) |>
+  dplyr::summarize(nT = dplyr::n(), 
+                   nVTor = sum(mag >= 4),
+                   nNVTor = sum(mag < 4))
+Y.df <- Torn.df |>
+  dplyr::filter(yr >= 2013) |>
+  dplyr::group_by(yr) |>
+  dplyr::summarize(nT = dplyr::n())
+
+YmaxD.df <- YD.df |>
+  dplyr::group_by(yr) |>
+  dplyr::summarize(nTdays = dplyr::n(),
+                   maxTor = max(nT))
+
+YmaxD.df <- YmaxD.df |>
+  merge(Y.df, by = "yr") |>
+  dplyr::mutate(frac = maxTor/nT)
+
+YmaxD.df |>
+  dplyr::summarize(minFrac = min(frac),
+                   maxFrac = max(frac),
+                   minYr = yr[which.min(frac)],
+                   maxYr = yr[which.max(frac)])
+
+min(YmaxD.df$frac) * 100
+maxFrac = max(YmaxD3.df$frac) * 100
+minYr = YmaxD3.df$Year[which.min(YmaxD3.df$frac)]
+maxYr = YmaxD3.df$Year[which.max(YmaxD3.df$frac)]
+```
+
+
+The percentage of the annual count occurring on the day of the year with the most tornadoes ranged from a low of 3.6\% in 2018 to a high of 9.5\% in 2021.
+
+```{r}
+Torn.df |>
+  dplyr::filter(yr >= 2013) |>
+  dplyr::summarize(nT = dplyr::n(),
+                   nVTor = sum(mag >= 4),
+                   perc = nVTor / nT * 100)
+```
+
+Moreover, tornadoes are rated on a categorical damage scale ranging from weak EF0 to violent EF4 and EF5. Of the 11,555 U.S. tornadoes in the database over the 10-year period only 0.34\% were rated as violent.
+
