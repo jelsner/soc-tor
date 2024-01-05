@@ -1,0 +1,13 @@
+---
+title: "SOC & tornadoes"
+output: html_document
+date: "2024-01-05"
+---
+
+Reproducing the analysis of daily U.S. tornado frequency distributions from https://rpubs.com/jelsner/DailyCounts
+
+Get the latest tornado reports from the SPC
+```{r}
+download.file(url = "http://www.spc.noaa.gov/wcm/data/1950-2022_actual_tornadoes.csv",
+              destfile = here::here("data", "Tornadoes.csv"))
+```
