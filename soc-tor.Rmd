@@ -4,7 +4,9 @@ output: html_document
 date: "2024-01-05"
 ---
 
-Reproducing the analysis of daily U.S. tornado frequency distributions from https://rpubs.com/jelsner/DailyCounts
+Analysis of daily U.S. tornado frequency distributions following the work of https://rpubs.com/jelsner/DailyCounts using data from 2013 through 2022
+
+# Preliminary analyses
 
 Get the latest tornado reports from the SPC
 ```{r}
@@ -68,5 +70,127 @@ Torn.df |>
                    perc = nVTor / nT * 100)
 ```
 
+What days had the most tornadoes and how many?
+```{r}
+YD.df |>
+  dplyr::group_by(yr) |>
+  dplyr::summarise(Date = date[which.max(nT)],
+                   nT = max(nT))
+```
+
 Moreover, tornadoes are rated on a categorical damage scale ranging from weak EF0 to violent EF4 and EF5. Of the 11,555 U.S. tornadoes in the database over the 10-year period only 0.34\% were rated as violent.
+
+```{r}
+( FreqByMag.df <- Torn.df |>
+  dplyr::filter(yr >= 2013 & mag >= 1) |>
+  dplyr::group_by(mag) |>
+  dplyr::summarise(nT = dplyr::n()) )
+```
+
+```{r}
+( Total <- sum(FreqByMag.df$nT) )
+FreqByMag.df$nT / Total
+```
+
+
+```{r}
+FreqByMag.df$nT[1:4] / FreqByMag.df$nT[2:5]
+```
+
+There are 5283 tornado reports (rated EF1 or higher) over the period 2013–2022 inclusive. Table~\ref{TotalDist} gives the distribution of the reports by EF rating by count and by percentage of the total. It also gives the factor by which the frequency in the category exceeds the frequency in the next highest category.
+
+# Frequency distribution of tornado days
+
+```{r}
+Torn2.df <- Torn.df |>
+  dplyr::filter(yr >= 1994 & yr <= 2012 & mag >= 1)
+
+( allDays <- as.integer(as.Date("2022-12-31") - as.Date("2013-01-01")) )
+
+YD2.df <- Torn2.df |>
+    dplyr::group_by(date, yr) |>
+    dplyr::summarise(nTor = dplyr::n(),
+                     nVTor = sum(mag >= 4))
+
+( torDays <- nrow(YD2.df) )
+( per <- torDays/allDays * 100 )
+
+```
+
+28.3\% of all days during this 10-year period had at least one EF1 or more damaging tornado. This compares with 29\% of all days during the period 1994-2012
+
+```{r}
+( mTorNV <- round(mean(YD2.df$nTor[YD2.df$nVTor == 0])) )
+( mTorV = round(mean(YD2.df$nTor[YD2.df$nVTor != 0])) )
+```
+
+The average number of tornadoes on tornado days without a violent tornado (EF4 or EF5) is 5 which compares to an average of 20 tornadoes on days with at least one violent tornado
+
+```{r}
+library(ggplot2)
+
+p2a <- YD2.df |>
+  dplyr::group_by(yr) |>
+  dplyr::summarise(nTdays = dplyr::n(),
+                   maxNtor = max(nTor)) |>
+ggplot(mapping = aes(x = yr, y = nTdays)) +
+  geom_col(fill = "grey") +
+  scale_x_continuous(breaks = 2013:2022) +
+  theme_bw() +
+  labs(y = "Tornado days", x = "")
+
+p2b <- YD2.df |>
+  dplyr::group_by(yr) |>
+  dplyr::summarise(nTdays = dplyr::n(),
+                   maxNtor = max(nTor)) |>
+ggplot(mapping = aes(x = yr, y = maxNtor)) +
+  geom_col(fill = "grey") +
+  scale_x_continuous(breaks = 2013:2022) +
+  theme_bw() +
+  labs(y = "Number of tornadoes\n on the day with the most", x = "")
+  
+library(patchwork)
+p2a / p2b
+```
+
+```{r}
+df <- table(YD2.df$nTor) |>
+  data.frame()
+names(df)[1] <- "Size"
+df$Size <- as.integer(df$Size)
+
+( p3a <- ggplot(data = df,
+              mapping = aes(x = Size, y = Freq)) + 
+  scale_x_log10() + scale_y_log10() + 
+  geom_point() + 
+  labs(x = expression(paste("Size (Number of tornadoes ", d^{-1}, ")")), 
+       y = "Frequency (Number of days)") +
+  theme_bw() )
+```
+
+```{r}
+library(VGAM)
+zipf.law <- vglm(formula = Size ~ 1, 
+     data = df,
+     weights = Freq,
+     family = zipf(lshape = "loglink"))
+
+summary(zipf.law)
+```
+
+# poweRlaw package
+
+```{r}
+library(poweRlaw)
+citation("poweRlaw")
+
+m_pl <- displ$new(df$Freq)
+est <- estimate_xmin(m_pl)
+m_pl$setXmin(est)
+
+plot(m_pl)
+lines(m_pl, col = 2)
+```
+
+
 
