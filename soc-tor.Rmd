@@ -103,7 +103,7 @@ There are 5283 tornado reports (rated EF1 or higher) over the period 2013–2022
 
 ```{r}
 Torn2.df <- Torn.df |>
-  dplyr::filter(yr >= 1994 & yr <= 2012 & mag >= 1)
+  dplyr::filter(yr >= 1994 & mag >= 1)
 
 ( allDays <- as.integer(as.Date("2022-12-31") - as.Date("2013-01-01")) )
 
@@ -154,10 +154,10 @@ p2a / p2b
 ```
 
 ```{r}
-df <- table(YD2.df$nTor) |>
+tab <- table(YD2.df$nTor)
+df <- tab |>
   data.frame()
-names(df)[1] <- "Size"
-df$Size <- as.integer(df$Size)
+df$Size <- as.integer(names(tab))
 
 ( p3a <- ggplot(data = df,
               mapping = aes(x = Size, y = Freq)) + 
@@ -168,6 +168,8 @@ df$Size <- as.integer(df$Size)
   theme_bw() )
 ```
 
+The VGAM package is no longer supported
+
 ```{r}
 library(VGAM)
 zipf.law <- vglm(formula = Size ~ 1, 
@@ -176,6 +178,7 @@ zipf.law <- vglm(formula = Size ~ 1,
      family = zipf(lshape = "loglink"))
 
 summary(zipf.law)
+exp(.4785)
 ```
 
 # poweRlaw package
@@ -188,9 +191,112 @@ m_pl <- displ$new(df$Freq)
 est <- estimate_xmin(m_pl)
 m_pl$setXmin(est)
 
-plot(m_pl)
+p.df <- plot(m_pl)
 lines(m_pl, col = 2)
 ```
+x: number of tornadoes
+y: percentage of tornado days with at least that many tornadoes
+
+```{r}
+parallel::detectCores()
+
+bs <- bootstrap(m_pl, no_of_sims = 1000, threads = 10)
+
+hist(bs$bootstraps[, 2], breaks = "fd")
+hist(bs$bootstraps[, 3], breaks = "fd")
+plot(jitter(bs$bootstraps[, 2], factor = 1.2), bs$bootstraps[, 3])
+```
+
+Do we have a power law?
+```{r}
+bs_p <- bootstrap_p(m_pl, no_of_sims = 1000, threads = 10)
+bs_p$p
+```
+
+With this high p-value we cannot rule out a power-law model
+
+# All tornadoes
+
+```{r}
+Days.df <- readr::read_csv(file = here::here("data", "Tornadoes.csv")) |>
+  dplyr::filter(mag >= 2) |>
+  dplyr::group_by(date, yr) |>
+  dplyr::summarise(nTor = dplyr::n())
+```
+
+```{r}
+tab <- table(Days.df$nTor)
+df <- tab |>
+  data.frame()
+df$Size <- as.integer(names(tab))
+
+ggplot(data = df,
+       mapping = aes(x = Size, y = Freq)) + 
+  scale_x_log10() + scale_y_log10() + 
+  geom_point() + 
+  labs(x = expression(paste("Size (Number of tornadoes ", d^{-1}, ")")), 
+       y = "Frequency (Number of days)") +
+  theme_bw() 
+```
+
+```{r}
+m_pl <- displ$new(df$Freq)
+est <- estimate_xmin(m_pl)
+m_pl$setXmin(est)
+
+m_pl$pars
+
+plot(m_pl)
+```
+
+```{r}
+bs <- bootstrap(m_pl, no_of_sims = 1000, threads = 10)
+
+hist(bs$bootstraps[, 2], breaks = "fd")
+hist(bs$bootstraps[, 3], breaks = "fd")
+plot(jitter(bs$bootstraps[, 2], factor = 1.2), bs$bootstraps[, 3])
+```
+
+Do we have a power law?
+```{r}
+bs_p <- bootstrap_p(m_pl, no_of_sims = 1000, threads = 10)
+bs_p$p
+```
+
+Assume a power law, how does that exponent change by year?
+
+```{r}
+w <- NULL
+xmin <- NULL
+for(i in 1954:2020){
+  print(i)
+  Days.df <- readr::read_csv(file = here::here("data", "Tornadoes.csv"),
+                             show_col_types = FALSE) |>
+#  dplyr::filter(mag >= 1, yr == i | yr == i-1 | yr == i-2 | yr == i-3 | yr == i-4) |>
+  dplyr::filter(mag >= 2, yr == i) |>
+  dplyr::group_by(date, yr) |>
+  dplyr::summarise(nTor = dplyr::n())
+  
+df <- table(Days.df$nTor) |>
+  data.frame()
+
+m_pl <- displ$new(df$Freq)
+est <- estimate_xmin(m_pl)
+#est$xmin = 1
+m_pl$setXmin(est)
 
 
+xmin <- c(xmin, m_pl$xmin)
+w <- c(w, m_pl$pars)
+}
 
+w.df <- data.frame(Year = 1954:2020, w)
+
+ggplot(data = w.df,
+       mapping = aes(x = Year, y = w)) +
+#  scale_y_continuous(limits = c(1, 2)) +
+  scale_x_continuous(breaks = seq(1955, 2020, by = 15)) +
+  geom_point() +
+  geom_quantile()
+
+```
