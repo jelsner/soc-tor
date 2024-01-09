@@ -2,6 +2,8 @@
 title: "SOC & tornadoes"
 output: html_document
 date: "2024-01-05"
+editor_options: 
+  chunk_output_type: console
 ---
 
 Analysis of daily U.S. tornado frequency distributions following the work of https://rpubs.com/jelsner/DailyCounts using data from 2013 through 2022
@@ -58,7 +60,6 @@ maxFrac = max(YmaxD3.df$frac) * 100
 minYr = YmaxD3.df$Year[which.min(YmaxD3.df$frac)]
 maxYr = YmaxD3.df$Year[which.max(YmaxD3.df$frac)]
 ```
-
 
 The percentage of the annual count occurring on the day of the year with the most tornadoes ranged from a low of 3.6\% in 2018 to a high of 9.5\% in 2021.
 
@@ -218,10 +219,19 @@ With this high p-value we cannot rule out a power-law model
 # All tornadoes
 
 ```{r}
-Days.df <- readr::read_csv(file = here::here("data", "Tornadoes.csv")) |>
-  dplyr::filter(mag >= 2) |>
+Days.df <- readr::read_csv(file = here::here("data", "Tornadoes.csv"),
+                             show_col_types = FALSE) |>
+  dplyr::filter(mag >= 2, yr > 1989) |>
   dplyr::group_by(date, yr) |>
-  dplyr::summarise(nTor = dplyr::n())
+  dplyr::reframe(nTor = dplyr::n())
+
+Days.df |>
+  dplyr::group_by(yr) |>
+  dplyr::reframe(nDays = dplyr::n(),
+                 nTor = sum(nTor)) |>
+  ggplot(mapping = aes(x = yr, y = nDays)) +
+  geom_point() +
+  geom_smooth()
 ```
 
 ```{r}
@@ -240,11 +250,13 @@ ggplot(data = df,
 ```
 
 ```{r}
-m_pl <- displ$new(df$Freq)
+Freq <- sort(df$Freq, decreasing = TRUE)
+m_pl <- displ$new(Freq)
 est <- estimate_xmin(m_pl)
 m_pl$setXmin(est)
 
 m_pl$pars
+m_pl$xmin
 
 plot(m_pl)
 ```
@@ -263,40 +275,132 @@ bs_p <- bootstrap_p(m_pl, no_of_sims = 1000, threads = 10)
 bs_p$p
 ```
 
-Assume a power law, how does that exponent change by year?
+Assuming a power law, how does the exponent change by year?
 
 ```{r}
 w <- NULL
 xmin <- NULL
-for(i in 1954:2020){
+for(i in 1950:2022){
   print(i)
   Days.df <- readr::read_csv(file = here::here("data", "Tornadoes.csv"),
                              show_col_types = FALSE) |>
-#  dplyr::filter(mag >= 1, yr == i | yr == i-1 | yr == i-2 | yr == i-3 | yr == i-4) |>
   dplyr::filter(mag >= 2, yr == i) |>
   dplyr::group_by(date, yr) |>
-  dplyr::summarise(nTor = dplyr::n())
+  dplyr::reframe(nTor = dplyr::n())
   
 df <- table(Days.df$nTor) |>
   data.frame()
 
-m_pl <- displ$new(df$Freq)
+Freq <- sort(df$Freq, decreasing = TRUE)
+m_pl <- displ$new(Freq)
 est <- estimate_xmin(m_pl)
 #est$xmin = 1
 m_pl$setXmin(est)
-
 
 xmin <- c(xmin, m_pl$xmin)
 w <- c(w, m_pl$pars)
 }
 
-w.df <- data.frame(Year = 1954:2020, w)
+w.df <- data.frame(Year = 1950:2022, w)
 
 ggplot(data = w.df,
        mapping = aes(x = Year, y = w)) +
 #  scale_y_continuous(limits = c(1, 2)) +
-  scale_x_continuous(breaks = seq(1955, 2020, by = 15)) +
+  scale_x_continuous(breaks = seq(1950, 2020, by = 10)) +
   geom_point() +
   geom_quantile()
 
+summary(lm(w~Year, data = w.df))
 ```
+
+Get the EF2+ tornadoes from Grazulis and check for daily count frequency scaling
+
+Get the historical tornado data
+```{r}
+OldTorn.sf <- sf::st_read(dsn = here::here("data", "SignificantTornadoes"), 
+                          layer = "SignificantTornadoes") |>
+  dplyr::mutate(date = as.Date(date)) |>
+  dplyr::arrange(date, time) |>
+  dplyr::select(-county) |>
+  dplyr::filter(mag %in% c("F2", "F3", "F4", "F5")) # note some transcription errors
+
+
+OldDays.df <- OldTorn.sf |>
+  sf::st_drop_geometry() |>
+  dplyr::group_by(date) |>
+  dplyr::reframe(nTor = dplyr::n(),
+                 yr = lubridate::year(date))
+```
+
+```{r}
+tab <- table(OldDays.df$nTor)
+df <- tab |>
+  data.frame()
+df$Size <- as.integer(names(tab))
+
+ggplot(data = df,
+       mapping = aes(x = Size, y = Freq)) + 
+  scale_x_log10() + scale_y_log10() + 
+  geom_point() + 
+  labs(x = expression(paste("Size (Number of tornadoes ", d^{-1}, ")")), 
+       y = "Frequency (Number of days)") +
+  theme_bw() 
+```
+
+```{r}
+Freq <- sort(df$Freq, decreasing = TRUE)
+m_pl <- displ$new(df$Freq)
+est <- estimate_xmin(m_pl)
+m_pl$setXmin(est)
+
+m_pl$pars
+m_pl$xmin
+
+plot(m_pl)
+```
+
+```{r}
+w <- NULL
+xmin <- NULL
+for(i in 1880:1989){
+  print(i)
+  OldTorn.sf <- sf::st_read(dsn = here::here("data", "SignificantTornadoes"), 
+                          layer = "SignificantTornadoes",
+                          quiet = TRUE) |>
+  dplyr::filter(Year == i) |>
+  dplyr::mutate(date = as.Date(date)) |>
+  dplyr::arrange(date, time) |>
+  dplyr::select(-county) |>
+  dplyr::filter(mag %in% c("F2", "F3", "F4", "F5")) # note some transcription errors
+
+OldDays.df <- OldTorn.sf |>
+  sf::st_drop_geometry() |>
+  dplyr::group_by(date) |>
+  dplyr::reframe(nTor = dplyr::n(),
+                 yr = lubridate::year(date))
+
+df <- table(OldDays.df$nTor) |>
+  data.frame()
+
+Freq <- sort(df$Freq, decreasing = TRUE)
+m_pl <- displ$new(Freq)
+est <- estimate_xmin(m_pl)
+#est$xmin = 1
+m_pl$setXmin(est)
+
+xmin <- c(xmin, m_pl$xmin)
+w <- c(w, m_pl$pars)
+}
+
+w.df <- data.frame(Year = 1880:1989, w)
+
+ggplot(data = w.df,
+       mapping = aes(x = Year, y = w)) +
+#  scale_y_continuous(limits = c(1, 2)) +
+  scale_x_continuous(breaks = seq(1880, 1989, by = 10)) +
+  geom_point() +
+  geom_quantile()
+
+summary(lm(w~Year, data = w.df))
+```
+
